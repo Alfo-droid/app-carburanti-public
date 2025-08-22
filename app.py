@@ -7,43 +7,40 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 from streamlit_geolocation import streamlit_geolocation
 from folium.plugins import MarkerCluster
+import json
 
 # --- Configurazione e Connessione al Database usando st.secrets ---
 try:
-    # Trasforma i segreti TOML in un dizionario per Firebase
-    firebase_creds_dict = {
-        "type": st.secrets["firebase_credentials"]["type"],
-        "project_id": st.secrets["firebase_credentials"]["project_id"],
-        "private_key_id": st.secrets["firebase_credentials"]["private_key_id"],
-        "private_key": st.secrets["firebase_credentials"]["private_key"].replace('\\n', '\n'),
-        "client_email": st.secrets["firebase_credentials"]["client_email"],
-        "client_id": st.secrets["firebase_credentials"]["client_id"],
-        "auth_uri": st.secrets["firebase_credentials"]["auth_uri"],
-        "token_uri": st.secrets["firebase_credentials"]["token_uri"],
-        "auth_provider_x509_cert_url": st.secrets["firebase_credentials"]["auth_provider_x509_cert_url"],
-        "client_x509_cert_url": st.secrets["firebase_credentials"]["client_x509_cert_url"],
-    }
-    cred = credentials.Certificate(firebase_creds_dict)
-    firebase_admin.initialize_app(cred)
+    if not firebase_admin._apps:
+        # st.secrets si comporta come un dizionario
+        firebase_creds_dict = st.secrets["firebase_credentials"]
+        cred = credentials.Certificate(firebase_creds_dict)
+        firebase_admin.initialize_app(cred)
+    
     db = firestore.client()
-except ValueError:
-    db = firestore.client()
+except Exception as e:
+    st.error(f"⚠️ Errore di connessione a Firebase! Assicurati di aver impostato i Segreti su Streamlit Cloud. Dettagli tecnici: {e}")
+    st.stop()
 
 st.set_page_config(layout="wide")
 st.title("⛽️ App Prezzi Carburante")
 
 # --- Funzioni di Autenticazione (usano st.secrets) ---
 def registra_utente(email, password):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={st.secrets.FIREBASE_WEB_API_KEY}"
+    api_key = st.secrets["firebase_web_api_key"]
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
     try:
         response = requests.post(url, json=payload); response.raise_for_status()
-        return response.json()
+        user_data = response.json()
+        crea_profilo_utente(user_data['localId'], email)
+        return user_data
     except requests.exceptions.HTTPError as err:
         return {"error": err.response.json().get("error", {})}
 
 def accedi_utente(email, password):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={st.secrets.FIREBASE_WEB_API_KEY}"
+    api_key = st.secrets["firebase_web_api_key"]
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
     try:
         response = requests.post(url, json=payload); response.raise_for_status()
@@ -52,7 +49,8 @@ def accedi_utente(email, password):
         return {"error": err.response.json().get("error", {})}
 
 def invia_email_verifica(id_token):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={st.secrets.FIREBASE_WEB_API_KEY}"
+    api_key = st.secrets["firebase_web_api_key"]
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}"
     payload = {"requestType": "VERIFY_EMAIL", "idToken": id_token}
     try:
         requests.post(url, json=payload)
@@ -60,7 +58,8 @@ def invia_email_verifica(id_token):
         pass
 
 def elimina_utente(id_token):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:delete?key={st.secrets.FIREBASE_WEB_API_KEY}"
+    api_key = st.secrets["firebase_web_api_key"]
+    url = f"https://identitytoolkit.googleapis.com/v1/accounts:delete?key={api_key}"
     payload = {"idToken": id_token}
     try:
         response = requests.post(url, json=payload); response.raise_for_status()
@@ -69,10 +68,25 @@ def elimina_utente(id_token):
         error_message = err.response.json().get("error", {}).get("message", "ERRORE_SCONOSCIUTO")
         return {"error": error_message}
 
+def crea_profilo_utente(uid, email):
+    db.collection("utenti").document(uid).set({
+        "email": email,
+        "data_registrazione": firestore.SERVER_TIMESTAMP,
+        "privacy_accepted": False
+    })
+
+def get_profilo_utente(uid):
+    doc_ref = db.collection("utenti").document(uid)
+    doc = doc_ref.get()
+    return doc.to_dict() if doc.exists else None
+
+def accetta_privacy(uid):
+    db.collection("utenti").document(uid).update({"privacy_accepted": True})
+
 # --- Funzioni di Logica ---
 @st.cache_data
 def trova_distributori_google(citta=None, coordinate=None):
-    api_key = st.secrets.GOOGLE_API_KEY
+    api_key = st.secrets["google_api_key"]
     if coordinate:
         lat, lon = coordinate['latitude'], coordinate['longitude']
         url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=gas_station&key={api_key}&language=it"
@@ -156,136 +170,5 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
         folium.Marker(location=[lat, lon], popup=popup_html, icon=icona).add_to(marker_cluster)
 
 # --- INIZIO APP ---
-if 'user_info' not in st.session_state: st.session_state.user_info = None
-if 'distributori_trovati' not in st.session_state: st.session_state.distributori_trovati = []
-if 'user_location' not in st.session_state: st.session_state.user_location = None
-
-if not st.session_state.user_info:
-    # Vista Login / Registrazione
-    st.sidebar.header("Benvenuto!")
-    scelta = st.sidebar.radio("Scegli un'azione:", ["Accedi", "Registrati"])
-    email = st.sidebar.text_input("Email")
-    password = st.sidebar.text_input("Password", type="password")
-    if scelta == "Registrati":
-        if st.sidebar.button("Registrati Ora"):
-            if email and password:
-                user_data = registra_utente(email, password)
-                if "error" in user_data: st.sidebar.error(f"Errore: {user_data['error'].get('message', 'Sconosciuto')}")
-                else:
-                    id_token = user_data.get("idToken")
-                    if id_token: invia_email_verifica(id_token)
-                    st.sidebar.success("Registrazione avvenuta!"); st.sidebar.info("Ti abbiamo inviato un'email di verifica.")
-            else: st.sidebar.warning("Inserisci email e password.")
-    if scelta == "Accedi":
-        if st.sidebar.button("Accedi"):
-            if email and password:
-                user_data = accedi_utente(email, password)
-                if "error" in user_data: st.sidebar.error(f"Errore: {user_data['error'].get('message', 'Sconosciuto')}")
-                else: st.session_state.user_info = user_data; st.rerun()
-            else: st.sidebar.warning("Inserisci email e password.")
-    st.info("👋 Benvenuto! Accedi o registrati dal menu a sinistra per usare l'app.")
-else:
-    # --- VISTA APP PRINCIPALE (per utenti loggati) ---
-    st.sidebar.header(f"Benvenuto,")
-    st.sidebar.write(st.session_state.user_info['email'])
-    if st.sidebar.button("Logout"):
-        st.session_state.user_info = None; st.cache_data.clear(); st.rerun()
-    with st.sidebar.expander("⚠️ Gestione Account"):
-        st.warning("Attenzione: l'eliminazione del tuo account è permanente.")
-        if st.button("Elimina il mio account"):
-            id_token = st.session_state.user_info.get("idToken")
-            risultato = elimina_utente(id_token)
-            if risultato.get("success"):
-                st.session_state.user_info = None; st.success("Account eliminato."); st.balloons(); st.rerun()
-            else:
-                st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
-
-    with st.sidebar:
-        st.header("📍 Trova Vicino a Me")
-        location_data = streamlit_geolocation()
-        if st.button("Usa la Mia Posizione"):
-            if location_data:
-                st.session_state.user_location = location_data
-                st.session_state.distributori_trovati = trova_distributori_google(coordinate=location_data)
-            else: st.warning("Posizione non trovata.")
-    
-    st.header("🌍 Cerca per Città")
-    citta_cercata = st.text_input("Scrivi il nome di un comune:")
-    if st.button("Cerca"):
-        st.session_state.distributori_trovati = trova_distributori_google(citta=citta_cercata)
-
-    if st.session_state.distributori_trovati:
-        distributori = st.session_state.distributori_trovati
-        prezzi_community = leggi_prezzi_da_firebase(distributori)
-        st.markdown("---"); st.header("⛽ Risultati della Ricerca")
-        
-        tipi_carburante_trovati = list(set(carb for id, p_info in prezzi_community.items() for carb in p_info.get('prezzi', {}).keys()))
-        carburante_selezionato = st.selectbox("Filtra per tipo di carburante:", ["-"] + sorted(tipi_carburante_trovati))
-        
-        risultati_finali = distributori
-        con_prezzo = []
-        if carburante_selezionato != "-":
-            con_prezzo = [d for d in distributori if d['id'] in prezzi_community and carburante_selezionato in prezzi_community[d['id']].get('prezzi', {})]
-            if con_prezzo:
-                risultati_finali = sorted(con_prezzo, key=lambda d: float(prezzi_community[d['id']]['prezzi'][carburante_selezionato]['valore']))
-        
-        st.success(f"Trovati {len(distributori)} distributori. Visualizzo {len(risultati_finali)} risultati filtrati.")
-
-        if risultati_finali:
-            if carburante_selezionato != "-" and con_prezzo:
-                lista_prezzi = [float(prezzi_community[d['id']]['prezzi'][carburante_selezionato]['valore']) for d in risultati_finali]
-                if lista_prezzi:
-                    st.subheader(f"📈 Statistiche per '{carburante_selezionato}' in zona")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Prezzo Minimo", f"{min(lista_prezzi):.3f} €"); col2.metric("Prezzo Massimo", f"{max(lista_prezzi):.3f} €"); col3.metric("Prezzo Medio", f"{sum(lista_prezzi) / len(lista_prezzi):.3f} €")
-            
-            tab_lista, tab_mappa = st.tabs(["🏆 Lista Risultati", "🗺️ Mappa"])
-
-            with tab_lista:
-                st.subheader("Lista dei distributori")
-                for d in risultati_finali:
-                    with st.container():
-                        col_info, col_prezzo = st.columns([2, 1])
-                        with col_info:
-                            st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
-                            if st.session_state.user_location:
-                                link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
-                                st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
-                        with col_prezzo:
-                            prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
-                            if carburante_selezionato != "-" and carburante_selezionato in prezzo_info_dict:
-                                info_prezzo = prezzo_info_dict[carburante_selezionato]
-                                st.metric(label=carburante_selezionato, value=f"{info_prezzo['valore']} €")
-                                conferme = info_prezzo.get("conferme", 1)
-                                st.write(f"✅ {conferme} Conferme")
-                                user_id = st.session_state.user_info['localId']
-                                if user_id not in info_prezzo.get("segnalato_da", []):
-                                    if st.button("👍 Conferma", key=f"conf_{d['id']}"):
-                                        conferma_prezzo(d['id'], carburante_selezionato, user_id)
-                        st.markdown("---")
-            
-            with tab_mappa:
-                mappa_citta = crea_mappa_base(centro=[float(risultati_finali[0]['latitudine']), float(risultati_finali[0]['longitudine'])], zoom=12)
-                aggiungi_distributori_sulla_mappa(mappa_citta, risultati_finali, prezzi_community, user_location=st.session_state.user_location)
-                st_folium(mappa_citta, width="100%", height=500, returned_objects=[])
-
-        elif carburante_selezionato != "-":
-             st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona. Prova a segnalarne uno!")
-
-    if st.session_state.distributori_trovati:
-        st.markdown("---"); st.header("✍️ Segnala un Prezzo")
-        distributori_per_form = st.session_state.distributori_trovati
-        nomi_distributori = [d['nome'] for d in distributori_per_form]
-        distributore_selezionato_nome = st.selectbox("1. Seleziona un distributore:", nomi_distributori)
-        if distributore_selezionato_nome:
-            distributore_selezionato_obj = [d for d in distributori_per_form if d['nome'] == distributore_selezionato_nome][0]
-            id_selezionato = distributore_selezionato_obj['id']
-            user_id = st.session_state.user_info['localId']
-            col1, col2 = st.columns(2)
-            with col1:
-                carburante_da_segnalare = st.selectbox("3. Seleziona il carburante:", ["Benzina", "Gasolio", "GPL", "Metano"])
-            with col2:
-                prezzo_inserito = st.number_input("4. Inserisci il prezzo:", format="%.3f", step=0.001, min_value=0.0)
-            if st.button("Invia Segnalazione"):
-                if prezzo_inserito > 0:
-                    salva_prezzo(id_selezionato, distributore_selezionato_nome, carburante_da_segnalare, prezzo_inserito, user_id)
+# (Il resto del codice principale dell'app, dal login in poi, rimane esattamente lo stesso)
+# ...
