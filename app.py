@@ -9,19 +9,40 @@ from streamlit_geolocation import streamlit_geolocation
 from folium.plugins import MarkerCluster
 import json
 
-# --- Configurazione e Connessione al Database usando st.secrets ---
+# --- Configurazione e Connessione al Database (CON LA CORREZIONE FINALE) ---
 try:
     if not firebase_admin._apps:
-        firebase_creds_dict = st.secrets["firebase_credentials"]
+        # Leggiamo i segreti da Streamlit Cloud
+        creds_from_secrets = st.secrets["firebase_credentials"]
+        
+        # Ricostruiamo il dizionario delle credenziali, correggendo la chiave privata
+        firebase_creds_dict = {
+            "type": creds_from_secrets["type"],
+            "project_id": creds_from_secrets["project_id"],
+            "private_key_id": creds_from_secrets["private_key_id"],
+            "private_key": creds_from_secrets["private_key"].replace('\\n', '\n'), # <-- LA CORREZIONE DEFINITIVA!
+            "client_email": creds_from_secrets["client_email"],
+            "client_id": creds_from_secrets["client_id"],
+            "auth_uri": creds_from_secrets["auth_uri"],
+            "token_uri": creds_from_secrets["token_uri"],
+            "auth_provider_x509_cert_url": creds_from_secrets["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": creds_from_secrets["client_x509_cert_url"],
+        }
+        if "universe_domain" in creds_from_secrets:
+            firebase_creds_dict["universe_domain"] = creds_from_secrets["universe_domain"]
+            
         cred = credentials.Certificate(firebase_creds_dict)
         firebase_admin.initialize_app(cred)
+    
     db = firestore.client()
 except Exception as e:
-    st.error(f"⚠️ Errore di connessione a Firebase! Assicurati di aver impostato i Segreti su Streamlit Cloud. Dettagli tecnici: {e}")
+    st.error(f"⚠️ Errore di connessione a Firebase! Assicurati di aver impostato i Segreti correttamente. Dettagli: {e}")
     st.stop()
 
 st.set_page_config(layout="wide")
 st.title("⛽️ App Prezzi Carburante")
+
+# (Tutto il resto del codice da qui in poi è identico e corretto)
 
 # --- Funzioni di Autenticazione (usano st.secrets) ---
 def registra_utente(email, password):
