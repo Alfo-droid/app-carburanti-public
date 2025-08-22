@@ -6,8 +6,9 @@ import config
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
-from streamlit_geolocation import streamlit_geolocation
+from streamlit_geolocation import streamlit_geolocation # <-- ECCO LA RIGA CHE MANCAVA
 from folium.plugins import MarkerCluster
+import xml.etree.ElementTree as ET
 
 # --- Configurazione e Connessione al Database ---
 try:
@@ -155,7 +156,7 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         if user_location:
-            link_navigatore = f"http://googleusercontent.com/maps/google.com/4{user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
+            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
@@ -272,7 +273,7 @@ if privacy_accettata:
                         with col_info:
                             st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
                             if st.session_state.user_location:
-                                link_navigatore = f"http://googleusercontent.com/maps/google.com/4{st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
+                                link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
                                 st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
                         with col_prezzo:
                             prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
