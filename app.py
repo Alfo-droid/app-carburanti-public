@@ -156,7 +156,8 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         if user_location:
-            link_navigatore = f"http://googleusercontent.com/maps/google.com/4{user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
+             # --- CORREZIONE DEFINITIVA DEL LINK ---
+            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{user_location['latitude']},{user_location['longitude']}&daddr={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
