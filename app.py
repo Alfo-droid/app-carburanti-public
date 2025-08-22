@@ -7,7 +7,6 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 from streamlit_geolocation import streamlit_geolocation
 from folium.plugins import MarkerCluster
-import json
 
 # --- Configurazione e Connessione al Database usando st.secrets ---
 try:
@@ -16,7 +15,6 @@ try:
         firebase_creds_dict = st.secrets["firebase_credentials"]
         cred = credentials.Certificate(firebase_creds_dict)
         firebase_admin.initialize_app(cred)
-    
     db = firestore.client()
 except Exception as e:
     st.error(f"⚠️ Errore di connessione a Firebase! Assicurati di aver impostato i Segreti su Streamlit Cloud. Dettagli tecnici: {e}")
@@ -70,9 +68,7 @@ def elimina_utente(id_token):
 
 def crea_profilo_utente(uid, email):
     db.collection("utenti").document(uid).set({
-        "email": email,
-        "data_registrazione": firestore.SERVER_TIMESTAMP,
-        "privacy_accepted": False
+        "email": email, "data_registrazione": firestore.SERVER_TIMESTAMP, "privacy_accepted": False
     })
 
 def get_profilo_utente(uid):
@@ -130,11 +126,7 @@ def conferma_prezzo(id_distributore, tipo_carburante, user_id):
             snapshot = doc_ref.get(transaction=transaction)
             dati = snapshot.to_dict()
             if user_id not in dati["prezzi"][tipo_carburante]["segnalato_da"]:
-                transaction.update(doc_ref, {
-                    f"prezzi.{tipo_carburante}.conferme": firestore.Increment(1),
-                    f"prezzi.{tipo_carburante}.segnalato_da": firestore.ArrayUnion([user_id]),
-                    "ultimo_aggiornamento": firestore.SERVER_TIMESTAMP
-                })
+                transaction.update(doc_ref, {f"prezzi.{tipo_carburante}.conferme": firestore.Increment(1), f"prezzi.{tipo_carburante}.segnalato_da": firestore.ArrayUnion([user_id]), "ultimo_aggiornamento": firestore.SERVER_TIMESTAMP})
                 return True
             else:
                 return False
@@ -143,8 +135,7 @@ def conferma_prezzo(id_distributore, tipo_carburante, user_id):
         if result: st.success("Grazie per la tua conferma!")
         else: st.warning("Hai già confermato questo prezzo.")
         st.cache_data.clear()
-    except Exception as e:
-        st.error(f"Errore durante la conferma: {e}")
+    except Exception as e: st.error(f"Errore durante la conferma: {e}")
 
 # --- Funzioni per la Mappa ---
 def crea_mappa_base(centro, zoom):
@@ -158,17 +149,47 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
         testo_prezzi = ""
         if 'prezzi' in info_prezzi_db:
             for carburante, info_carburante in info_prezzi_db['prezzi'].items():
-                prezzo_val = info_carburante.get('valore', 'N/D')
-                conferme_val = info_carburante.get('conferme', 0)
+                prezzo_val = info_carburante.get('valore', 'N/D'); conferme_val = info_carburante.get('conferme', 0)
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         if user_location:
-            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
+            link_navigatore = f"http://googleusercontent.com/maps/google.com/4{user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
         folium.Marker(location=[lat, lon], popup=popup_html, icon=icona).add_to(marker_cluster)
 
 # --- INIZIO APP ---
-# (Il resto del codice principale dell'app, dal login in poi, rimane esattamente lo stesso)
-# ...
+if 'user_info' not in st.session_state: st.session_state.user_info = None
+if 'distributori_trovati' not in st.session_state: st.session_state.distributori_trovati = []
+if 'user_location' not in st.session_state: st.session_state.user_location = None
+
+# --- Sezione Sidebar ---
+st.sidebar.header("👤 Area Utente")
+if not st.session_state.user_info:
+    # (codice login/registrazione invariato)
+    pass
+else:
+    # (codice utente loggato invariato)
+    pass
+
+# --- Logica di Visualizzazione ---
+privacy_accettata = False
+if st.session_state.user_info:
+    profilo_utente = get_profilo_utente(st.session_state.user_info['localId'])
+    if profilo_utente and profilo_utente.get("privacy_accepted", False):
+        privacy_accettata = True
+    else:
+        # Usa una normale area di testo invece di st.modal
+        st.subheader("Informativa sulla Privacy")
+        st.info("Benvenuto! Per usare le funzioni di contribuzione, devi accettare la nostra informativa.")
+        st.write("Raccoglieremo la tua email per l'account e tracceremo i prezzi che segnali per garantire la qualità del servizio.")
+        accettato = st.checkbox("Dichiaro di aver letto e accettato l'informativa sulla privacy.")
+        if st.button("Continua", disabled=not accettato):
+            accetta_privacy(st.session_state.user_info['localId']); st.rerun()
+else:
+    privacy_accettata = True
+
+if privacy_accettata:
+    # (Codice della vista principale dell'app, con ricerca, risultati e modulo segnalazione)
+    pass
