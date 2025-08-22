@@ -2,51 +2,29 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 import requests
+import config
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 from streamlit_geolocation import streamlit_geolocation
 from folium.plugins import MarkerCluster
-import json
 
-# --- Configurazione e Connessione al Database (CON LA CORREZIONE FINALE) ---
+# --- Configurazione e Connessione al Database ---
 try:
     if not firebase_admin._apps:
-        # Leggiamo i segreti da Streamlit Cloud
-        creds_from_secrets = st.secrets["firebase_credentials"]
-        
-        # Ricostruiamo il dizionario delle credenziali, correggendo la chiave privata
-        firebase_creds_dict = {
-            "type": creds_from_secrets["type"],
-            "project_id": creds_from_secrets["project_id"],
-            "private_key_id": creds_from_secrets["private_key_id"],
-            "private_key": creds_from_secrets["private_key"].replace('\\n', '\n'), # <-- LA CORREZIONE DEFINITIVA!
-            "client_email": creds_from_secrets["client_email"],
-            "client_id": creds_from_secrets["client_id"],
-            "auth_uri": creds_from_secrets["auth_uri"],
-            "token_uri": creds_from_secrets["token_uri"],
-            "auth_provider_x509_cert_url": creds_from_secrets["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": creds_from_secrets["client_x509_cert_url"],
-        }
-        if "universe_domain" in creds_from_secrets:
-            firebase_creds_dict["universe_domain"] = creds_from_secrets["universe_domain"]
-            
-        cred = credentials.Certificate(firebase_creds_dict)
+        cred = credentials.Certificate("firebase_credentials.json")
         firebase_admin.initialize_app(cred)
-    
     db = firestore.client()
 except Exception as e:
-    st.error(f"⚠️ Errore di connessione a Firebase! Assicurati di aver impostato i Segreti correttamente. Dettagli: {e}")
+    st.error(f"⚠️ Errore di connessione a Firebase! Dettagli: {e}")
     st.stop()
 
 st.set_page_config(layout="wide")
 st.title("⛽️ App Prezzi Carburante")
 
-# (Tutto il resto del codice da qui in poi è identico e corretto)
-
-# --- Funzioni di Autenticazione (usano st.secrets) ---
+# --- Funzioni di Autenticazione e Profilo Utente ---
 def registra_utente(email, password):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
     try:
@@ -58,7 +36,7 @@ def registra_utente(email, password):
         return {"error": err.response.json().get("error", {})}
 
 def accedi_utente(email, password):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
     try:
@@ -68,7 +46,7 @@ def accedi_utente(email, password):
         return {"error": err.response.json().get("error", {})}
 
 def invia_email_verifica(id_token):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}"
     payload = {"requestType": "VERIFY_EMAIL", "idToken": id_token}
     try:
@@ -77,7 +55,7 @@ def invia_email_verifica(id_token):
         pass
 
 def elimina_utente(id_token):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:delete?key={api_key}"
     payload = {"idToken": id_token}
     try:
@@ -105,7 +83,7 @@ def accetta_privacy(uid):
 # --- Funzioni di Logica ---
 @st.cache_data
 def trova_distributori_google(citta=None, coordinate=None):
-    api_key = st.secrets["google_api_key"]
+    api_key = config.GOOGLE_API_KEY
     if coordinate:
         lat, lon = coordinate['latitude'], coordinate['longitude']
         url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=gas_station&key={api_key}&language=it"
@@ -177,7 +155,7 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         if user_location:
-            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
+            link_navigatore = f"http://googleusercontent.com/maps/google.com/4{user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
@@ -226,114 +204,101 @@ else:
             else:
                 st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
 
-# --- Logica di Visualizzazione ---
-privacy_accettata = False
-if st.session_state.user_info:
-    profilo_utente = get_profilo_utente(st.session_state.user_info['localId'])
-    if profilo_utente and profilo_utente.get("privacy_accepted", False):
-        privacy_accettata = True
-    else:
-        st.subheader("Informativa sulla Privacy")
-        st.info("Benvenuto! Per usare le funzioni di contribuzione, devi accettare la nostra informativa.")
-        st.write("Raccoglieremo la tua email per l'account e tracceremo i prezzi che segnali per garantire la qualità del servizio.")
-        accettato = st.checkbox("Dichiaro di aver letto e accettato l'informativa sulla privacy.")
-        if st.button("Continua", disabled=not accettato):
-            accetta_privacy(st.session_state.user_info['localId']); st.rerun()
-else:
-    privacy_accettata = True
-
-if privacy_accettata:
-    with st.sidebar:
-        st.markdown("---")
-        st.header("📍 Trova Vicino a Me")
-        location_data = streamlit_geolocation()
-        if st.button("Usa la Mia Posizione"):
-            if location_data:
-                st.session_state.user_location = location_data
-                st.session_state.distributori_trovati = trova_distributori_google(coordinate=location_data)
-            else: st.warning("Posizione non trovata.")
+with st.sidebar:
+    st.markdown("---")
+    st.header("📍 La Tua Posizione")
+    location_data = streamlit_geolocation()
+    if location_data:
+        st.session_state.user_location = location_data
     
-    st.header("🌍 Cerca per Città")
-    citta_cercata = st.text_input("Scrivi il nome di un comune:")
-    if st.button("Cerca"):
-        st.session_state.distributori_trovati = trova_distributori_google(citta=citta_cercata)
+    if st.button("Cerca Distributori Vicino a Me"):
+        if st.session_state.user_location:
+            st.session_state.distributori_trovati = trova_distributori_google(coordinate=st.session_state.user_location)
+        else:
+            st.warning("Posizione non trovata. Assicurati di aver dato il permesso al browser e che il GPS sia attivo.")
 
-    if st.session_state.distributori_trovati:
-        distributori = st.session_state.distributori_trovati
-        prezzi_community = leggi_prezzi_da_firebase(distributori)
-        st.markdown("---"); st.header("⛽ Risultati della Ricerca")
+# --- Sezione Principale dell'App ---
+st.header("🌍 Cerca per Città")
+citta_cercata = st.text_input("Scrivi il nome di un comune:")
+if st.button("Cerca"):
+    st.session_state.distributori_trovati = trova_distributori_google(citta=citta_cercata)
+
+if st.session_state.distributori_trovati:
+    distributori = st.session_state.distributori_trovati
+    prezzi_community = leggi_prezzi_da_firebase(distributori)
+    st.markdown("---"); st.header("⛽ Risultati della Ricerca")
+    
+    tipi_carburante_trovati = list(set(carb for id, p_info in prezzi_community.items() for carb in p_info.get('prezzi', {}).keys()))
+    carburante_selezionato = st.selectbox("Filtra per tipo di carburante:", ["-"] + sorted(tipi_carburante_trovati))
+    
+    risultati_finali = distributori
+    con_prezzo = []
+    if carburante_selezionato != "-":
+        con_prezzo = [d for d in distributori if d['id'] in prezzi_community and carburante_selezionato in prezzi_community[d['id']].get('prezzi', {})]
+        if con_prezzo:
+            risultati_finali = sorted(con_prezzo, key=lambda d: float(prezzi_community[d['id']]['prezzi'][carburante_selezionato]['valore']))
+    
+    st.success(f"Trovati {len(distributori)} distributori. Visualizzo {len(risultati_finali)} risultati filtrati.")
+
+    if risultati_finali:
+        if carburante_selezionato != "-" and con_prezzo:
+            lista_prezzi = [float(prezzi_community[d['id']]['prezzi'][carburante_selezionato]['valore']) for d in risultati_finali]
+            if lista_prezzi:
+                st.subheader(f"📈 Statistiche per '{carburante_selezionato}' in zona")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Prezzo Minimo", f"{min(lista_prezzi):.3f} €"); col2.metric("Prezzo Massimo", f"{max(lista_prezzi):.3f} €"); col3.metric("Prezzo Medio", f"{sum(lista_prezzi) / len(lista_prezzi):.3f} €")
         
-        tipi_carburante_trovati = list(set(carb for id, p_info in prezzi_community.items() for carb in p_info.get('prezzi', {}).keys()))
-        carburante_selezionato = st.selectbox("Filtra per tipo di carburante:", ["-"] + sorted(tipi_carburante_trovati))
+        tab_lista, tab_mappa = st.tabs(["🏆 Lista Risultati", "🗺️ Mappa"])
+
+        with tab_lista:
+            st.subheader("Lista dei distributori")
+            for d in risultati_finali:
+                with st.container():
+                    col_info, col_prezzo = st.columns([2, 1])
+                    with col_info:
+                        st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
+                        if st.session_state.user_location:
+                            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
+                            st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
+                    with col_prezzo:
+                        prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
+                        if carburante_selezionato != "-" and carburante_selezionato in prezzo_info_dict:
+                            info_prezzo = prezzo_info_dict[carburante_selezionato]
+                            st.metric(label=carburante_selezionato, value=f"{info_prezzo['valore']} €")
+                            conferme = info_prezzo.get("conferme", 1)
+                            st.write(f"✅ {conferme} Conferme")
+                            if st.session_state.user_info:
+                                user_id = st.session_state.user_info['localId']
+                                if user_id not in info_prezzo.get("segnalato_da", []):
+                                    if st.button("👍 Conferma", key=f"conf_{d['id']}"):
+                                        conferma_prezzo(d['id'], carburante_selezionato, user_id)
+                    st.markdown("---")
         
-        risultati_finali = distributori
-        con_prezzo = []
-        if carburante_selezionato != "-":
-            con_prezzo = [d for d in distributori if d['id'] in prezzi_community and carburante_selezionato in prezzi_community[d['id']].get('prezzi', {})]
-            if con_prezzo:
-                risultati_finali = sorted(con_prezzo, key=lambda d: float(prezzi_community[d['id']]['prezzi'][carburante_selezionato]['valore']))
-        
-        st.success(f"Trovati {len(distributori)} distributori. Visualizzo {len(risultati_finali)} risultati filtrati.")
+        with tab_mappa:
+            if risultati_finali:
+                mappa_citta = crea_mappa_base(centro=[float(risultati_finali[0]['latitudine']), float(risultati_finali[0]['longitudine'])], zoom=12)
+                aggiungi_distributori_sulla_mappa(mappa_citta, risultati_finali, prezzi_community, user_location=st.session_state.user_location)
+                st_folium(mappa_citta, width="100%", height=500, returned_objects=[])
 
-        if risultati_finali:
-            if carburante_selezionato != "-" and con_prezzo:
-                lista_prezzi = [float(prezzi_community[d['id']]['prezzi'][carburante_selezionato]['valore']) for d in risultati_finali]
-                if lista_prezzi:
-                    st.subheader(f"📈 Statistiche per '{carburante_selezionato}' in zona")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Prezzo Minimo", f"{min(lista_prezzi):.3f} €"); col2.metric("Prezzo Massimo", f"{max(lista_prezzi):.3f} €"); col3.metric("Prezzo Medio", f"{sum(lista_prezzi) / len(lista_prezzi):.3f} €")
-            
-            tab_lista, tab_mappa = st.tabs(["🏆 Lista Risultati", "🗺️ Mappa"])
+    elif carburante_selezionato != "-":
+            st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona.")
 
-            with tab_lista:
-                st.subheader("Lista dei distributori")
-                for d in risultati_finali:
-                    with st.container():
-                        col_info, col_prezzo = st.columns([2, 1])
-                        with col_info:
-                            st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
-                            if st.session_state.user_location:
-                                link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
-                                st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
-                        with col_prezzo:
-                            prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
-                            if carburante_selezionato != "-" and carburante_selezionato in prezzo_info_dict:
-                                info_prezzo = prezzo_info_dict[carburante_selezionato]
-                                st.metric(label=carburante_selezionato, value=f"{info_prezzo['valore']} €")
-                                conferme = info_prezzo.get("conferme", 1)
-                                st.write(f"✅ {conferme} Conferme")
-                                if st.session_state.user_info:
-                                    user_id = st.session_state.user_info['localId']
-                                    if user_id not in info_prezzo.get("segnalato_da", []):
-                                        if st.button("👍 Conferma", key=f"conf_{d['id']}"):
-                                            conferma_prezzo(d['id'], carburante_selezionato, user_id)
-                        st.markdown("---")
-            
-            with tab_mappa:
-                if risultati_finali:
-                    mappa_citta = crea_mappa_base(centro=[float(risultati_finali[0]['latitudine']), float(risultati_finali[0]['longitudine'])], zoom=12)
-                    aggiungi_distributori_sulla_mappa(mappa_citta, risultati_finali, prezzi_community, user_location=st.session_state.user_location)
-                    st_folium(mappa_citta, width="100%", height=500, returned_objects=[])
-
-        elif carburante_selezionato != "-":
-             st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona.")
-
-    if st.session_state.user_info and st.session_state.distributori_trovati:
-        st.markdown("---"); st.header("✍️ Segnala un Prezzo")
-        distributori_per_form = st.session_state.distributori_trovati
-        nomi_distributori = [d['nome'] for d in distributori_per_form]
-        distributore_selezionato_nome = st.selectbox("1. Seleziona un distributore:", nomi_distributori)
-        if distributore_selezionato_nome:
-            distributore_selezionato_obj = [d for d in distributori_per_form if d['nome'] == distributore_selezionato_nome][0]
-            id_selezionato = distributore_selezionato_obj['id']
-            user_id = st.session_state.user_info['localId']
-            col1, col2 = st.columns(2)
-            with col1:
-                carburante_da_segnalare = st.selectbox("3. Seleziona il carburante:", ["Benzina", "Gasolio", "GPL", "Metano"])
-            with col2:
-                prezzo_inserito = st.number_input("4. Inserisci il prezzo:", format="%.3f", step=0.001, min_value=0.0)
-            if st.button("Invia Segnalazione"):
-                if prezzo_inserito > 0:
-                    salva_prezzo(id_selezionato, distributore_selezionato_nome, carburante_da_segnalare, prezzo_inserito, user_id)
-    elif st.session_state.distributori_trovati and not st.session_state.user_info:
-        st.info("💡 Accedi o registrati per poter segnalare e confermare i prezzi!")
+if st.session_state.user_info and st.session_state.distributori_trovati:
+    st.markdown("---"); st.header("✍️ Segnala un Prezzo")
+    distributori_per_form = st.session_state.distributori_trovati
+    nomi_distributori = [d['nome'] for d in distributori_per_form]
+    distributore_selezionato_nome = st.selectbox("1. Seleziona un distributore:", nomi_distributori)
+    if distributore_selezionato_nome:
+        distributore_selezionato_obj = [d for d in distributori_per_form if d['nome'] == distributore_selezionato_nome][0]
+        id_selezionato = distributore_selezionato_obj['id']
+        user_id = st.session_state.user_info['localId']
+        col1, col2 = st.columns(2)
+        with col1:
+            carburante_da_segnalare = st.selectbox("3. Seleziona il carburante:", ["Benzina", "Gasolio", "GPL", "Metano"])
+        with col2:
+            prezzo_inserito = st.number_input("4. Inserisci il prezzo:", format="%.3f", step=0.001, min_value=0.0)
+        if st.button("Invia Segnalazione"):
+            if prezzo_inserito > 0:
+                salva_prezzo(id_selezionato, distributore_selezionato_nome, carburante_da_segnalare, prezzo_inserito, user_id)
+elif st.session_state.distributori_trovati and not st.session_state.user_info:
+    st.info("💡 Accedi o registrati per poter segnalare e confermare i prezzi!")
