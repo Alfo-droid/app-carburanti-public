@@ -6,9 +6,8 @@ import config
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
-from streamlit_geolocation import streamlit_geolocation # <-- ECCO LA RIGA CHE MANCAVA
+from streamlit_geolocation import streamlit_geolocation
 from folium.plugins import MarkerCluster
-import xml.etree.ElementTree as ET
 
 # --- Configurazione e Connessione al Database ---
 try:
@@ -21,7 +20,7 @@ except ValueError:
 st.set_page_config(layout="wide")
 st.title("⛽️ App Prezzi Carburante")
 
-# --- Funzioni di Autenticazione ---
+# --- Funzioni di Autenticazione e Profilo Utente ---
 def registra_utente(email, password):
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={config.FIREBASE_WEB_API_KEY}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
@@ -74,7 +73,6 @@ def get_profilo_utente(uid):
 
 def accetta_privacy(uid):
     db.collection("utenti").document(uid).update({"privacy_accepted": True})
-    st.success("Grazie per aver accettato l'informativa!")
 
 # --- Funzioni di Logica ---
 @st.cache_data
@@ -156,7 +154,7 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         if user_location:
-            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
+            link_navigatore = f"http://googleusercontent.com/maps/google.com/4{user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
@@ -212,7 +210,6 @@ if st.session_state.user_info:
     if profilo_utente and profilo_utente.get("privacy_accepted", False):
         privacy_accettata = True
     else:
-        # Usa una normale area di testo invece di st.modal
         st.subheader("Informativa sulla Privacy")
         st.info("Benvenuto! Per usare le funzioni di contribuzione, devi accettare la nostra informativa.")
         st.write("Raccoglieremo la tua email per l'account e tracceremo i prezzi che segnali per garantire la qualità del servizio.")
@@ -273,7 +270,7 @@ if privacy_accettata:
                         with col_info:
                             st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
                             if st.session_state.user_location:
-                                link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
+                                link_navigatore = f"http://googleusercontent.com/maps/google.com/4{st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
                                 st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
                         with col_prezzo:
                             prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
