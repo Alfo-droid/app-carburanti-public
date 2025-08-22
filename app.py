@@ -12,7 +12,6 @@ import json
 # --- Configurazione e Connessione al Database usando st.secrets ---
 try:
     if not firebase_admin._apps:
-        # st.secrets si comporta come un dizionario
         firebase_creds_dict = st.secrets["firebase_credentials"]
         cred = credentials.Certificate(firebase_creds_dict)
         firebase_admin.initialize_app(cred)
