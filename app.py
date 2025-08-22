@@ -23,7 +23,7 @@ except Exception as e:
 st.set_page_config(layout="wide")
 st.title("⛽️ App Prezzi Carburante")
 
-# --- Funzioni di Autenticazione (usano st.secrets) ---
+# --- Funzioni di Autenticazione e Profilo Utente ---
 def registra_utente(email, password):
     api_key = st.secrets["firebase_web_api_key"]
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
@@ -156,7 +156,7 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         if user_location:
-            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
+            link_navigatore = f"http://googleusercontent.com/maps/google.com/4{user_location['latitude']},{user_location['longitude']}&destination={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
@@ -224,13 +224,17 @@ else:
 if privacy_accettata:
     with st.sidebar:
         st.markdown("---")
-        st.header("📍 Trova Vicino a Me")
+        st.header("📍 La Tua Posizione")
         location_data = streamlit_geolocation()
-        if st.button("Usa la Mia Posizione"):
-            if location_data:
-                st.session_state.user_location = location_data
-                st.session_state.distributori_trovati = trova_distributori_google(coordinate=location_data)
-            else: st.warning("Posizione non trovata.")
+        # CORREZIONE: Salviamo la posizione in memoria non appena è disponibile
+        if location_data:
+            st.session_state.user_location = location_data
+        
+        if st.button("Cerca Distributori Vicino a Me"):
+            if st.session_state.user_location:
+                st.session_state.distributori_trovati = trova_distributori_google(coordinate=st.session_state.user_location)
+            else:
+                st.warning("Posizione non trovata. Assicurati di aver dato il permesso al browser.")
     
     st.header("🌍 Cerca per Città")
     citta_cercata = st.text_input("Scrivi il nome di un comune:")
@@ -297,22 +301,23 @@ if privacy_accettata:
         elif carburante_selezionato != "-":
              st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona.")
 
-    if st.session_state.user_info and st.session_state.distributori_trovati:
-        st.markdown("---"); st.header("✍️ Segnala un Prezzo")
-        distributori_per_form = st.session_state.distributori_trovati
-        nomi_distributori = [d['nome'] for d in distributori_per_form]
-        distributore_selezionato_nome = st.selectbox("1. Seleziona un distributore:", nomi_distributori)
-        if distributore_selezionato_nome:
-            distributore_selezionato_obj = [d for d in distributori_per_form if d['nome'] == distributore_selezionato_nome][0]
-            id_selezionato = distributore_selezionato_obj['id']
-            user_id = st.session_state.user_info['localId']
-            col1, col2 = st.columns(2)
-            with col1:
-                carburante_da_segnalare = st.selectbox("3. Seleziona il carburante:", ["Benzina", "Gasolio", "GPL", "Metano"])
-            with col2:
-                prezzo_inserito = st.number_input("4. Inserisci il prezzo:", format="%.3f", step=0.001, min_value=0.0)
-            if st.button("Invia Segnalazione"):
-                if prezzo_inserito > 0:
-                    salva_prezzo(id_selezionato, distributore_selezionato_nome, carburante_da_segnalare, prezzo_inserito, user_id)
-    elif st.session_state.distributori_trovati and not st.session_state.user_info:
-        st.info("💡 Accedi o registrati per poter segnalare e confermare i prezzi!")
+    if st.session_state.distributori_trovati:
+        if st.session_state.user_info:
+            st.markdown("---"); st.header("✍️ Segnala un Prezzo")
+            distributori_per_form = st.session_state.distributori_trovati
+            nomi_distributori = [d['nome'] for d in distributori_per_form]
+            distributore_selezionato_nome = st.selectbox("1. Seleziona un distributore:", nomi_distributori)
+            if distributore_selezionato_nome:
+                distributore_selezionato_obj = [d for d in distributori_per_form if d['nome'] == distributore_selezionato_nome][0]
+                id_selezionato = distributore_selezionato_obj['id']
+                user_id = st.session_state.user_info['localId']
+                col1, col2 = st.columns(2)
+                with col1:
+                    carburante_da_segnalare = st.selectbox("3. Seleziona il carburante:", ["Benzina", "Gasolio", "GPL", "Metano"])
+                with col2:
+                    prezzo_inserito = st.number_input("4. Inserisci il prezzo:", format="%.3f", step=0.001, min_value=0.0)
+                if st.button("Invia Segnalazione"):
+                    if prezzo_inserito > 0:
+                        salva_prezzo(id_selezionato, distributore_selezionato_nome, carburante_da_segnalare, prezzo_inserito, user_id)
+        elif not st.session_state.user_info:
+            st.info("💡 Accedi o registrati per poter segnalare e confermare i prezzi!")
