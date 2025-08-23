@@ -2,43 +2,29 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 import requests
+import config
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 from streamlit_geolocation import streamlit_geolocation
 from folium.plugins import MarkerCluster
-import json
 
-# --- Configurazione e Connessione al Database usando st.secrets ---
+# --- Configurazione e Connessione al Database ---
 try:
     if not firebase_admin._apps:
-        firebase_creds_dict = {
-            "type": st.secrets["firebase_credentials"]["type"],
-            "project_id": st.secrets["firebase_credentials"]["project_id"],
-            "private_key_id": st.secrets["firebase_credentials"]["private_key_id"],
-            "private_key": st.secrets["firebase_credentials"]["private_key"].replace('\\n', '\n'),
-            "client_email": st.secrets["firebase_credentials"]["client_email"],
-            "client_id": st.secrets["firebase_credentials"]["client_id"],
-            "auth_uri": st.secrets["firebase_credentials"]["auth_uri"],
-            "token_uri": st.secrets["firebase_credentials"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["firebase_credentials"]["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": st.secrets["firebase_credentials"]["client_x509_cert_url"],
-        }
-        if "universe_domain" in st.secrets["firebase_credentials"]:
-            firebase_creds_dict["universe_domain"] = st.secrets["firebase_credentials"]["universe_domain"]
-        cred = credentials.Certificate(firebase_creds_dict)
+        cred = credentials.Certificate("firebase_credentials.json")
         firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
-    st.error(f"⚠️ Errore di connessione a Firebase! Assicurati di aver impostato i Segreti correttamente. Dettagli: {e}")
+    st.error(f"⚠️ Errore di connessione a Firebase! Dettagli: {e}")
     st.stop()
 
 st.set_page_config(layout="wide")
 st.title("⛽️ App Prezzi Carburante")
 
-# --- Funzioni di Autenticazione ---
+# --- Funzioni di Autenticazione e Profilo Utente ---
 def registra_utente(email, password):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
     try:
@@ -50,7 +36,7 @@ def registra_utente(email, password):
         return {"error": err.response.json().get("error", {})}
 
 def accedi_utente(email, password):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
     payload = {"email": email, "password": password, "returnSecureToken": True}
     try:
@@ -60,7 +46,7 @@ def accedi_utente(email, password):
         return {"error": err.response.json().get("error", {})}
 
 def invia_email_verifica(id_token):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}"
     payload = {"requestType": "VERIFY_EMAIL", "idToken": id_token}
     try:
@@ -69,7 +55,7 @@ def invia_email_verifica(id_token):
         pass
 
 def elimina_utente(id_token):
-    api_key = st.secrets["firebase_web_api_key"]
+    api_key = config.FIREBASE_WEB_API_KEY
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:delete?key={api_key}"
     payload = {"idToken": id_token}
     try:
@@ -81,7 +67,9 @@ def elimina_utente(id_token):
 
 def crea_profilo_utente(uid, email):
     db.collection("utenti").document(uid).set({
-        "email": email, "data_registrazione": firestore.SERVER_TIMESTAMP, "privacy_accepted": False
+        "email": email,
+        "data_registrazione": firestore.SERVER_TIMESTAMP,
+        "privacy_accepted": False
     })
 
 def get_profilo_utente(uid):
@@ -95,7 +83,7 @@ def accetta_privacy(uid):
 # --- Funzioni di Logica ---
 @st.cache_data
 def trova_distributori_google(citta=None, coordinate=None):
-    api_key = st.secrets["google_api_key"]
+    api_key = config.GOOGLE_API_KEY
     if coordinate:
         lat, lon = coordinate['latitude'], coordinate['longitude']
         url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lon}&radius=5000&type=gas_station&key={api_key}&language=it"
@@ -163,19 +151,13 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
         testo_prezzi = ""
         if 'prezzi' in info_prezzi_db:
             for carburante, info_carburante in info_prezzi_db['prezzi'].items():
-                prezzo_val = info_carburante.get('valore', 'N/D')
-                conferme_val = info_carburante.get('conferme', 0)
+                prezzo_val = info_carburante.get('valore', 'N/D'); conferme_val = info_carburante.get('conferme', 0)
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
-        
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
-        
         if user_location:
-            user_lat = user_location['latitude']
-            user_lon = user_location['longitude']
-            # --- ECCO LA FORMULA CORRETTA E UNIFICATA ---
+            user_lat, user_lon = user_location['latitude'], user_location['longitude']
             link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{user_lat},{user_lon}&daddr={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
-            
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
         folium.Marker(location=[lat, lon], popup=popup_html, icon=icona).add_to(marker_cluster)
@@ -290,8 +272,8 @@ if privacy_accettata:
                         with col_info:
                             st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
                             if st.session_state.user_location:
-                               # Sostituisci la vecchia riga del link_navigatore con questa
-link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&daddr={d['latitudine']},{d['longitudine']}"
+                                # --- LINK NAVIGATORE CORRETTO ---
+                                link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
                                 st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
                         with col_prezzo:
                             prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
