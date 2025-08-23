@@ -165,11 +165,14 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
             for carburante, info_carburante in info_prezzi_db['prezzi'].items():
                 prezzo_val = info_carburante.get('valore', 'N/D'); conferme_val = info_carburante.get('conferme', 0)
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
+        
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
+        
         if user_location:
-            user_lat, user_lon = user_location['latitude'], user_location['longitude']
-            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{user_lat},{user_lon}&daddr={lat},{lon}"
+            # --- FORMULA NAVIGATORE CORRETTA E UNIFICATA ---
+            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{user_location['latitude']},{user_location['longitude']}&daddr={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
+
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
         folium.Marker(location=[lat, lon], popup=popup_html, icon=icona).add_to(marker_cluster)
@@ -284,7 +287,8 @@ if privacy_accettata:
                         with col_info:
                             st.markdown(f"**{d['nome']}**<br><small>{d['indirizzo']}</small>", unsafe_allow_html=True)
                             if st.session_state.user_location:
-                                link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&destination={d['latitudine']},{d['longitudine']}"
+                               # Sostituisci la vecchia riga del link_navigatore con questa
+link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{st.session_state.user_location['latitude']},{st.session_state.user_location['longitude']}&daddr={d['latitudine']},{d['longitudine']}"
                                 st.markdown(f"<a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>", unsafe_allow_html=True)
                         with col_prezzo:
                             prezzo_info_dict = prezzi_community.get(d['id'], {}).get('prezzi', {})
