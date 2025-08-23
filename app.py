@@ -294,31 +294,6 @@ else:
                 st.rerun()
             else:
                 st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
-else:
-    # MODIFICA 4: Visualizziamo i punti dell'utente nella sidebar
-    user_id = st.session_state.user_info['localId']
-    profilo_utente = get_profilo_utente(user_id)
-    punti = profilo_utente.get('punti', 0) if profilo_utente else 0
-    
-    st.sidebar.write(f"Benvenuto, {st.session_state.user_info['email']}")
-    # --- NUOVA SEZIONE VISUALE PUNTI ---
-    st.sidebar.markdown("---")
-    st.sidebar.metric(label="🏆 Il Tuo Punteggio", value=punti)
-    st.sidebar.markdown("---")
-    # --- FINE NUOVA SEZIONE ---
-
-    if st.sidebar.button("Logout"):
-        st.session_state.user_info = None; st.cache_data.clear(); st.rerun()
-    
-    with st.sidebar.expander("⚠️ Gestione Account"):
-        st.warning("Attenzione: l'eliminazione del tuo account è permanente.")
-        if st.button("Elimina il mio account"):
-            id_token = st.session_state.user_info.get("idToken")
-            risultato = elimina_utente(id_token)
-            if risultato.get("success"):
-                st.session_state.user_info = None; st.success("Account eliminato."); st.balloons(); st.rerun()
-            else:
-                st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
 
 # --- Il resto del codice rimane invariato, lo includo per completezza ---
 # --- Logica di Visualizzazione ---
