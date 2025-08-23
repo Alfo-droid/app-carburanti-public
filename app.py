@@ -97,6 +97,22 @@ def get_profilo_utente(uid):
 def accetta_privacy(uid):
     db.collection("utenti").document(uid).update({"privacy_accepted": True})
 
+# --- NUOVA FUNZIONE PER I LIVELLI UTENTE ---
+def get_livello_utente(punti):
+    """
+    Restituisce un titolo e un'icona in base ai punti dell'utente.
+    """
+    if punti < 50:
+        return "Novellino", "👶"
+    elif punti < 150:
+        return "Contributore Attivo", "👍"
+    elif punti < 500:
+        return "Esperto del Rifornimento", "😎"
+    elif punti < 1000:
+        return "Re della Strada", "👑"
+    else:
+        return "Leggenda del Carburante", "🏆"
+    
 # --- Funzioni di Logica ---
 @st.cache_data
 def trova_distributori_google(citta=None, coordinate=None):
@@ -206,27 +222,45 @@ if 'user_location' not in st.session_state: st.session_state.user_location = Non
 # --- Sezione Sidebar ---
 st.sidebar.header("👤 Area Utente")
 if not st.session_state.user_info:
+    # ... (il codice per l'utente non loggato rimane invariato) ...
     st.sidebar.info("Accedi o registrati per contribuire!")
     scelta = st.sidebar.radio("Scegli un'azione:", ["Accedi", "Registrati"])
     email = st.sidebar.text_input("Email", key="login_email")
     password = st.sidebar.text_input("Password", type="password", key="login_password")
-    if scelta == "Registrati":
-        if st.sidebar.button("Registrati Ora"):
-            if email and password:
-                user_data = registra_utente(email, password)
-                if "error" in user_data: st.sidebar.error(f"Errore: {user_data['error'].get('message', 'Sconosciuto')}")
-                else:
-                    id_token = user_data.get("idToken")
-                    if id_token: invia_email_verifica(id_token)
-                    st.sidebar.success("Registrazione avvenuta!"); st.sidebar.info("Ti abbiamo inviato un'email di verifica.")
-            else: st.sidebar.warning("Inserisci email e password.")
-    if scelta == "Accedi":
-        if st.sidebar.button("Accedi"):
-            if email and password:
-                user_data = accedi_utente(email, password)
-                if "error" in user_data: st.sidebar.error(f"Errore: {user_data['error'].get('message', 'Sconosciuto')}")
-                else: st.session_state.user_info = user_data; st.rerun()
-            else: st.sidebar.warning("Inserisci email e password.")
+    # ... (il resto della logica di login/registrazione rimane la stessa) ...
+else:
+    # --- MODIFICA QUI: Visualizziamo punti e LIVELLO ---
+    user_id = st.session_state.user_info['localId']
+    profilo_utente = get_profilo_utente(user_id)
+    punti = profilo_utente.get('punti', 0) if profilo_utente else 0
+    
+    # Chiamiamo la nuova funzione per ottenere titolo ed emoji
+    titolo, icona = get_livello_utente(punti)
+    
+    st.sidebar.write(f"Benvenuto, {st.session_state.user_info['email']}")
+    st.sidebar.markdown("---")
+
+    # Usiamo le colonne per un aspetto più ordinato
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        st.metric(label="🏆 Punteggio", value=punti)
+    with col2:
+        st.metric(label="✨ Livello", value=titolo)
+
+    st.sidebar.markdown("---")
+
+    if st.sidebar.button("Logout"):
+        st.session_state.user_info = None; st.cache_data.clear(); st.rerun()
+    
+    with st.sidebar.expander("⚠️ Gestione Account"):
+        st.warning("Attenzione: l'eliminazione del tuo account è permanente.")
+        if st.button("Elimina il mio account"):
+            id_token = st.session_state.user_info.get("idToken")
+            risultato = elimina_utente(id_token)
+            if risultato.get("success"):
+                st.session_state.user_info = None; st.success("Account eliminato."); st.balloons(); st.rerun()
+            else:
+                st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
 else:
     # MODIFICA 4: Visualizziamo i punti dell'utente nella sidebar
     user_id = st.session_state.user_info['localId']
