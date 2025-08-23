@@ -79,9 +79,14 @@ def elimina_utente(id_token):
         error_message = err.response.json().get("error", {}).get("message", "ERRORE_SCONOSCIUTO")
         return {"error": error_message}
 
+# MODIFICA 1: Aggiungiamo i campi per la gamification al profilo utente
 def crea_profilo_utente(uid, email):
     db.collection("utenti").document(uid).set({
-        "email": email, "data_registrazione": firestore.SERVER_TIMESTAMP, "privacy_accepted": False
+        "email": email,
+        "data_registrazione": firestore.SERVER_TIMESTAMP,
+        "privacy_accepted": False,
+        "punti": 0,                   # <-- AGGIUNTO
+        "numero_segnalazioni": 0      # <-- AGGIUNTO
     })
 
 def get_profilo_utente(uid):
@@ -120,17 +125,29 @@ def leggi_prezzi_da_firebase(lista_distributori):
         prezzi_trovati[doc.id] = doc.to_dict()
     return prezzi_trovati
 
+# MODIFICA 2: Assegniamo i punti quando si salva un prezzo
 def salva_prezzo(id_distributore, nome_distributore, tipo_carburante, nuovo_prezzo, user_id):
     try:
+        # Codice esistente per salvare il prezzo
         doc_ref = db.collection("prezzi_segnalati").document(id_distributore)
         nuovo_prezzo_data = {
             "valore": nuovo_prezzo, "conferme": 1,
             "segnalato_da": [user_id], "data_inserimento": firestore.SERVER_TIMESTAMP
         }
         doc_ref.set({"id": id_distributore, "nome_distributore": nome_distributore, "prezzi": { tipo_carburante: nuovo_prezzo_data }, "ultimo_aggiornamento": firestore.SERVER_TIMESTAMP}, merge=True)
+
+        # --- AGGIUNTA: Aggiornamento punti e segnalazioni utente ---
+        utente_ref = db.collection("utenti").document(user_id)
+        utente_ref.update({
+            "punti": firestore.Increment(10),               # Aggiunge 10 punti
+            "numero_segnalazioni": firestore.Increment(1)   # Aumenta di 1 le segnalazioni
+        })
+        # --- FINE AGGIUNTA ---
+
         st.success(f"Grazie! Prezzo per '{nome_distributore}' aggiornato."); st.cache_data.clear()
     except Exception as e: st.error(f"Errore durante il salvataggio: {e}")
 
+# MODIFICA 3 (BONUS): Assegniamo punti anche per la conferma
 def conferma_prezzo(id_distributore, tipo_carburante, user_id):
     try:
         doc_ref = db.collection("prezzi_segnalati").document(id_distributore)
@@ -143,10 +160,18 @@ def conferma_prezzo(id_distributore, tipo_carburante, user_id):
                 return True
             else:
                 return False
+        
         transaction = db.transaction()
         result = update_in_transaction(transaction, doc_ref)
-        if result: st.success("Grazie per la tua conferma!")
-        else: st.warning("Hai già confermato questo prezzo.")
+        
+        if result:
+            # --- AGGIUNTA: Aggiornamento punti per la conferma ---
+            utente_ref = db.collection("utenti").document(user_id)
+            utente_ref.update({"punti": firestore.Increment(2)}) # Aggiunge 2 punti per la conferma
+            # --- FINE AGGIUNTA ---
+            st.success("Grazie per la tua conferma!")
+        else:
+            st.warning("Hai già confermato questo prezzo.")
         st.cache_data.clear()
     except Exception as e:
         st.error(f"Errore durante la conferma: {e}")
@@ -203,9 +228,21 @@ if not st.session_state.user_info:
                 else: st.session_state.user_info = user_data; st.rerun()
             else: st.sidebar.warning("Inserisci email e password.")
 else:
+    # MODIFICA 4: Visualizziamo i punti dell'utente nella sidebar
+    user_id = st.session_state.user_info['localId']
+    profilo_utente = get_profilo_utente(user_id)
+    punti = profilo_utente.get('punti', 0) if profilo_utente else 0
+    
     st.sidebar.write(f"Benvenuto, {st.session_state.user_info['email']}")
+    # --- NUOVA SEZIONE VISUALE PUNTI ---
+    st.sidebar.markdown("---")
+    st.sidebar.metric(label="🏆 Il Tuo Punteggio", value=punti)
+    st.sidebar.markdown("---")
+    # --- FINE NUOVA SEZIONE ---
+
     if st.sidebar.button("Logout"):
         st.session_state.user_info = None; st.cache_data.clear(); st.rerun()
+    
     with st.sidebar.expander("⚠️ Gestione Account"):
         st.warning("Attenzione: l'eliminazione del tuo account è permanente.")
         if st.button("Elimina il mio account"):
@@ -216,11 +253,12 @@ else:
             else:
                 st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
 
+# --- Il resto del codice rimane invariato, lo includo per completezza ---
 # --- Logica di Visualizzazione ---
 privacy_accettata = False
 if st.session_state.user_info:
-    profilo_utente = get_profilo_utente(st.session_state.user_info['localId'])
-    if profilo_utente and profilo_utente.get("privacy_accepted", False):
+    profilo_utente_main = get_profilo_utente(st.session_state.user_info['localId']) # Riusiamo la funzione
+    if profilo_utente_main and profilo_utente_main.get("privacy_accepted", False):
         privacy_accettata = True
     else:
         st.subheader("Informativa sulla Privacy")
@@ -297,7 +335,7 @@ if privacy_accettata:
                                     if user_id not in info_prezzo.get("segnalato_da", []):
                                         if st.button("👍 Conferma", key=f"conf_{d['id']}"):
                                             conferma_prezzo(d['id'], carburante_selezionato, user_id)
-                        st.markdown("---")
+                    st.markdown("---")
             
             with tab_mappa:
                 if risultati_finali:
@@ -306,7 +344,7 @@ if privacy_accettata:
                     st_folium(mappa_citta, width="100%", height=500, returned_objects=[])
 
         elif carburante_selezionato != "-":
-             st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona.")
+                 st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona.")
 
     if st.session_state.user_info and st.session_state.distributori_trovati:
         st.markdown("---"); st.header("✍️ Segnala un Prezzo")
