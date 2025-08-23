@@ -221,20 +221,48 @@ if 'user_location' not in st.session_state: st.session_state.user_location = Non
 
 # --- Sezione Sidebar ---
 st.sidebar.header("👤 Area Utente")
+
+# SE L'UTENTE NON È LOGGATO
 if not st.session_state.user_info:
-    # ... (il codice per l'utente non loggato rimane invariato) ...
     st.sidebar.info("Accedi o registrati per contribuire!")
     scelta = st.sidebar.radio("Scegli un'azione:", ["Accedi", "Registrati"])
     email = st.sidebar.text_input("Email", key="login_email")
     password = st.sidebar.text_input("Password", type="password", key="login_password")
-    # ... (il resto della logica di login/registrazione rimane la stessa) ...
+    
+    if scelta == "Registrati":
+        if st.sidebar.button("Registrati Ora"):
+            if email and password:
+                user_data = registra_utente(email, password)
+                if "error" in user_data: 
+                    st.sidebar.error(f"Errore: {user_data['error'].get('message', 'Sconosciuto')}")
+                else:
+                    id_token = user_data.get("idToken")
+                    if id_token: 
+                        invia_email_verifica(id_token)
+                    st.sidebar.success("Registrazione avvenuta!")
+                    st.sidebar.info("Ti abbiamo inviato un'email di verifica.")
+            else: 
+                st.sidebar.warning("Inserisci email e password.")
+    
+    if scelta == "Accedi":
+        if st.sidebar.button("Accedi"):
+            if email and password:
+                user_data = accedi_utente(email, password)
+                if "error" in user_data: 
+                    st.sidebar.error(f"Errore: {user_data['error'].get('message', 'Sconosciuto')}")
+                else: 
+                    st.session_state.user_info = user_data
+                    st.rerun()
+            else: 
+                st.sidebar.warning("Inserisci email e password.")
+
+# SE L'UTENTE È LOGGATO (BLOCCO UNICO E CORRETTO)
 else:
-    # --- MODIFICA QUI: Visualizziamo punti e LIVELLO ---
     user_id = st.session_state.user_info['localId']
     profilo_utente = get_profilo_utente(user_id)
     punti = profilo_utente.get('punti', 0) if profilo_utente else 0
     
-    # Chiamiamo la nuova funzione per ottenere titolo ed emoji
+    # Chiamiamo la nuova funzione per ottenere titolo 
     titolo, icona = get_livello_utente(punti)
     
     st.sidebar.write(f"Benvenuto, {st.session_state.user_info['email']}")
@@ -245,12 +273,14 @@ else:
     with col1:
         st.metric(label="🏆 Punteggio", value=punti)
     with col2:
-        st.metric(label="✨ Livello", value=titolo)
+        st.metric(label="✨ Livello", value=titolo) # Ho notato che hai tolto l'icona, va benissimo!
 
     st.sidebar.markdown("---")
 
     if st.sidebar.button("Logout"):
-        st.session_state.user_info = None; st.cache_data.clear(); st.rerun()
+        st.session_state.user_info = None
+        st.cache_data.clear()
+        st.rerun()
     
     with st.sidebar.expander("⚠️ Gestione Account"):
         st.warning("Attenzione: l'eliminazione del tuo account è permanente.")
@@ -258,7 +288,10 @@ else:
             id_token = st.session_state.user_info.get("idToken")
             risultato = elimina_utente(id_token)
             if risultato.get("success"):
-                st.session_state.user_info = None; st.success("Account eliminato."); st.balloons(); st.rerun()
+                st.session_state.user_info = None
+                st.success("Account eliminato.")
+                st.balloons()
+                st.rerun()
             else:
                 st.error(f"Errore: {risultato.get('error')}. Prova a fare Logout e Login e riprova.")
 else:
