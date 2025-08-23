@@ -353,7 +353,7 @@ if privacy_accettata:
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Prezzo Minimo", f"{min(lista_prezzi):.3f} €"); col2.metric("Prezzo Massimo", f"{max(lista_prezzi):.3f} €"); col3.metric("Prezzo Medio", f"{sum(lista_prezzi) / len(lista_prezzi):.3f} €")
             
-            tab_lista, tab_mappa = st.tabs(["🏆 Lista Risultati", "🗺️ Mappa"])
+            tab_lista, tab_mappa, tab_classifica = st.tabs(["🏆 Lista Risultati", "🗺️ Mappa", "🥇 Classifica"])
 
             with tab_lista:
                 st.subheader("Lista dei distributori")
@@ -384,6 +384,40 @@ if privacy_accettata:
                     mappa_citta = crea_mappa_base(centro=[float(risultati_finali[0]['latitudine']), float(risultati_finali[0]['longitudine'])], zoom=12)
                     aggiungi_distributori_sulla_mappa(mappa_citta, risultati_finali, prezzi_community, user_location=st.session_state.user_location)
                     st_folium(mappa_citta, width="100%", height=500, returned_objects=[])
+                    # --- BLOCCO NUOVO PER LA TAB CLASSIFICA ---
+with tab_classifica:
+    st.subheader("🏆 Top 10 Utenti della Community")
+    
+    # Chiamiamo la funzione per ottenere i dati
+    top_utenti = get_top_utenti()
+    
+    if not top_utenti:
+        st.info("Non c'è ancora nessuno in classifica. Sii il primo a contribuire!")
+    else:
+        # Creiamo un'intestazione per la classifica
+        col1, col2, col3 = st.columns([1, 4, 2])
+        col1.write("**Pos.**")
+        col2.write("**Utente**")
+        col3.write("**Punti**")
+        st.markdown("---")
+
+        # Mostriamo ogni utente in classifica
+        for i, utente in enumerate(top_utenti):
+            col1, col2, col3 = st.columns([1, 4, 2])
+            
+            # Aggiungiamo le medaglie per i primi 3
+            posizione = i + 1
+            if posizione == 1:
+                col1.markdown(f"🥇 **{posizione}**")
+            elif posizione == 2:
+                col1.markdown(f"🥈 **{posizione}**")
+            elif posizione == 3:
+                col1.markdown(f"🥉 **{posizione}**")
+            else:
+                col1.write(str(posizione))
+
+            col2.write(utente['nome'])
+            col3.write(f"**{utente['punti']}**")
 
         elif carburante_selezionato != "-":
                  st.info(f"Nessun prezzo segnalato per '{carburante_selezionato}' in questa zona.")
