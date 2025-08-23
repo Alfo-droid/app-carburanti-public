@@ -163,16 +163,19 @@ def aggiungi_distributori_sulla_mappa(mappa_da_popolare, lista_distributori, pre
         testo_prezzi = ""
         if 'prezzi' in info_prezzi_db:
             for carburante, info_carburante in info_prezzi_db['prezzi'].items():
-                prezzo_val = info_carburante.get('valore', 'N/D'); conferme_val = info_carburante.get('conferme', 0)
+                prezzo_val = info_carburante.get('valore', 'N/D')
+                conferme_val = info_carburante.get('conferme', 0)
                 testo_prezzi += f"<br><b>{carburante}: {prezzo_val} €</b> ({conferme_val} conferme)"
         
         popup_html = f"<strong>{distributore['nome']}</strong><br>{distributore['indirizzo']}{testo_prezzi}"
         
         if user_location:
-            # --- FORMULA NAVIGATORE CORRETTA E UNIFICATA ---
-            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{user_location['latitude']},{user_location['longitude']}&daddr={lat},{lon}"
+            user_lat = user_location['latitude']
+            user_lon = user_location['longitude']
+            # --- ECCO LA FORMULA CORRETTA E UNIFICATA ---
+            link_navigatore = f"https://www.google.com/maps/dir/?api=1&origin=...&destination=...{user_lat},{user_lon}&daddr={lat},{lon}"
             popup_html += f"<br><br><a href='{link_navigatore}' target='_blank'>➡️ Avvia Navigatore</a>"
-
+            
         colore_icona = "green" if testo_prezzi else "blue"
         icona = folium.Icon(color=colore_icona, icon="gas-pump", prefix="fa")
         folium.Marker(location=[lat, lon], popup=popup_html, icon=icona).add_to(marker_cluster)
